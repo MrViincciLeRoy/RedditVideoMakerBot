@@ -1,5 +1,4 @@
 name: Reddit Scraper
-
 on:
   workflow_dispatch:
     inputs:
@@ -11,11 +10,14 @@ on:
         description: 'Number of posts'
         required: true
         default: '5'
+      comment_limit:
+        description: 'Comments per post'
+        required: false
+        default: '10'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-
     steps:
       - name: Install Tor
         run: |
@@ -30,28 +32,74 @@ jobs:
         run: |
           python3 - <<'EOF'
           import requests
-          import os
+          import time
 
-          subreddit = "${{ github.event.inputs.subreddit }}"
-          limit     = "${{ github.event.inputs.limit }}"
+          subreddit    = "${{ github.event.inputs.subreddit }}"
+          limit        = "${{ github.event.inputs.limit }}"
+          comment_limit = int("${{ github.event.inputs.comment_limit }}")
 
           proxies = {
               "http":  "socks5h://127.0.0.1:9050",
               "https": "socks5h://127.0.0.1:9050",
           }
-          headers = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          }
+          headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
 
-          url = f"https://www.reddit.com/r/{subreddit}/top.json?limit={limit}&t=day"
-          r   = requests.get(url, headers=headers, proxies=proxies, timeout=30)
+          def get(url):
+              r = requests.get(url, headers=headers, proxies=proxies, timeout=30)
+              r.raise_for_status()
+              return r.json()
 
-          print(f"Status: {r.status_code}")
-          print(f"Subreddit: r/{subreddit}\n")
+          def flatten_comments(children, depth=0, limit=None, count=[0]):
+              results = []
+              for child in children:
+                  if limit and count[0] >= limit:
+                      break
+                  d = child.get("data", {})
+                  kind = child.get("kind")
+                  if kind == "t1":  # comment
+                      count[0] += 1
+                      indent = "  " * depth
+                      body = d.get("body", "").strip().replace("\n", f"\n{indent}   ")
+                      results.append(f"{indent}▸ u/{d.get('author')} | ↑{d.get('score', 0)}")
+                      results.append(f"{indent}  {body}")
+                      replies = d.get("replies")
+                      if isinstance(replies, dict):
+                          nested = replies.get("data", {}).get("children", [])
+                          results.extend(flatten_comments(nested, depth + 1, limit, count))
+              return results
 
-          for i, post in enumerate(r.json()["data"]["children"], 1):
+          listing = get(f"https://www.reddit.com/r/{subreddit}/top.json?limit={limit}&t=day")
+          posts = listing["data"]["children"]
+
+          print(f"r/{subreddit} — top {limit} posts\n{'='*60}\n")
+
+          for i, post in enumerate(posts, 1):
               d = post["data"]
-              print(f"{i}. {d['title']}")
-              print(f"   Score: {d['score']} | Comments: {d['num_comments']}")
-              print(f"   URL: https://reddit.com{d['permalink']}\n")
+              post_id = d["id"]
+
+              print(f"[{i}] {d['title']}")
+              print(f"     u/{d['author']} | ↑{d['score']} | 💬{d['num_comments']}")
+              print(f"     https://reddit.com{d['permalink']}")
+
+              # Post body
+              selftext = d.get("selftext", "").strip()
+              if selftext:
+                  print(f"\n  BODY:\n  {selftext}\n")
+              elif d.get("url"):
+                  print(f"\n  LINK: {d['url']}\n")
+
+              # Fetch comments
+              time.sleep(2)  # be polite
+              try:
+                  thread = get(f"https://www.reddit.com/r/{subreddit}/comments/{post_id}.json?limit={comment_limit}&sort=top")
+                  comment_tree = thread[1]["data"]["children"]
+                  lines = flatten_comments(comment_tree, limit=comment_limit)
+                  if lines:
+                      print(f"  COMMENTS (top {comment_limit}):")
+                      for line in lines:
+                          print(f"  {line}")
+              except Exception as e:
+                  print(f"  [could not fetch comments: {e}]")
+
+              print(f"\n{'-'*60}\n")
           EOF
