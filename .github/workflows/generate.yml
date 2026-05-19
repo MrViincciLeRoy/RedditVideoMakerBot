@@ -1,0 +1,84 @@
+name: Generate Reddit Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      subreddit:
+        description: 'Subreddit to pull from (e.g. AmItheAsshole)'
+        required: true
+        default: 'AmItheAsshole'
+      post_id:
+        description: 'Specific post ID (optional, leave blank for random top post)'
+        required: false
+        default: ''
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install system deps for Playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          python -m playwright install chromium
+          python -m playwright install-deps chromium
+
+      - name: Generate config.toml from secrets
+        run: |
+          cat > config.toml << EOF
+          [reddit.creds]
+          client_id     = "${{ secrets.REDDIT_CLIENT_ID }}"
+          client_secret = "${{ secrets.REDDIT_CLIENT_SECRET }}"
+          username      = "${{ secrets.REDDIT_USERNAME }}"
+          password      = "${{ secrets.REDDIT_PASSWORD }}"
+
+          [reddit.thread]
+          subreddit         = "${{ github.event.inputs.subreddit }}"
+          post_id           = "${{ github.event.inputs.post_id }}"
+          max_comment_count = 5
+          min_comments      = 3
+
+          [settings]
+          theme             = "dark"
+          times_to_run      = 1
+          opacity           = 0.9
+          storymode         = true
+          storymodemethod   = 0
+
+          [settings.background]
+          background_choice = "minecraft"
+          background_audio_volume = 0.5
+
+          [settings.voice]
+          narrator_voice    = "en_us_006"
+          EOF
+
+      - name: Run bot
+        run: |
+          xvfb-run --auto-servernum python main.py
+        env:
+          DISPLAY: ':99'
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reddit-video-${{ github.event.inputs.subreddit }}-${{ github.run_number }}
+          path: results/
+          retention-days: 7
