@@ -1,0 +1,22 @@
+name: Test Reddit Scrape
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Reddit JSON scrape
+        run: |
+          python3 - <<'EOF'
+          import requests
+
+          url = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
+          headers = {"User-Agent": "my-bot/0.1"}
+          posts = requests.get(url, headers=headers).json()
+
+          for post in posts["data"]["children"]:
+              print(post["data"]["title"])
+          EOF
