@@ -8,30 +8,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install Tor
-        run: |
-          sudo apt-get install -y tor
-          sudo service tor start
-          sleep 5
-
-      - name: Install Python deps
-        run: pip install requests[socks]
-
-      - name: Scrape via Tor
+      - name: Scrape via ScraperAPI
+        env:
+          SCRAPER_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: |
           python3 - <<'EOF'
-          import requests
+          import requests, os
 
-          proxies = {
-              "http":  "socks5h://127.0.0.1:9050",
-              "https": "socks5h://127.0.0.1:9050",
-          }
-          headers = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-          }
+          key = os.environ["SCRAPER_KEY"]
+          target = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
+          url = f"http://api.scraperapi.com?api_key={key}&url={target}"
 
-          url = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
-          r = requests.get(url, headers=headers, proxies=proxies)
+          r = requests.get(url, timeout=30)
           print("Status:", r.status_code)
 
           for post in r.json()["data"]["children"]:
