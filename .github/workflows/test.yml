@@ -8,22 +8,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test Reddit JSON scrape
+      - name: Install Tor
+        run: |
+          sudo apt-get install -y tor
+          sudo service tor start
+          sleep 5
+
+      - name: Install Python deps
+        run: pip install requests[socks]
+
+      - name: Scrape via Tor
         run: |
           python3 - <<'EOF'
           import requests
 
-          url = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
+          proxies = {
+              "http":  "socks5h://127.0.0.1:9050",
+              "https": "socks5h://127.0.0.1:9050",
+          }
           headers = {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-              "Accept": "application/json",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
           }
 
-          r = requests.get(url, headers=headers)
+          url = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
+          r = requests.get(url, headers=headers, proxies=proxies)
           print("Status:", r.status_code)
-          print("Response preview:", r.text[:300])
 
-          data = r.json()
-          for post in data["data"]["children"]:
+          for post in r.json()["data"]["children"]:
               print(post["data"]["title"])
           EOF
