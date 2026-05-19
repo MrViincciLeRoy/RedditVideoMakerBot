@@ -1,27 +1,57 @@
-name: Test Reddit Scrape
+name: Reddit Scraper
 
 on:
   workflow_dispatch:
+    inputs:
+      subreddit:
+        description: 'Subreddit to scrape'
+        required: true
+        default: 'AmItheAsshole'
+      limit:
+        description: 'Number of posts'
+        required: true
+        default: '5'
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Scrape via ScraperAPI
-        env:
-          SCRAPER_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      - name: Install Tor
+        run: |
+          sudo apt-get install -y tor
+          sudo service tor start
+          sleep 15
+
+      - name: Install Python deps
+        run: pip install requests[socks]
+
+      - name: Scrape Reddit
         run: |
           python3 - <<'EOF'
-          import requests, os
+          import requests
+          import os
 
-          key = os.environ["SCRAPER_KEY"]
-          target = "https://www.reddit.com/r/AmItheAsshole/top.json?limit=5&t=day"
-          url = f"http://api.scraperapi.com?api_key={key}&url={target}"
+          subreddit = "${{ github.event.inputs.subreddit }}"
+          limit     = "${{ github.event.inputs.limit }}"
 
-          r = requests.get(url, timeout=30)
-          print("Status:", r.status_code)
+          proxies = {
+              "http":  "socks5h://127.0.0.1:9050",
+              "https": "socks5h://127.0.0.1:9050",
+          }
+          headers = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          }
 
-          for post in r.json()["data"]["children"]:
-              print(post["data"]["title"])
+          url = f"https://www.reddit.com/r/{subreddit}/top.json?limit={limit}&t=day"
+          r   = requests.get(url, headers=headers, proxies=proxies, timeout=30)
+
+          print(f"Status: {r.status_code}")
+          print(f"Subreddit: r/{subreddit}\n")
+
+          for i, post in enumerate(r.json()["data"]["children"], 1):
+              d = post["data"]
+              print(f"{i}. {d['title']}")
+              print(f"   Score: {d['score']} | Comments: {d['num_comments']}")
+              print(f"   URL: https://reddit.com{d['permalink']}\n")
           EOF
